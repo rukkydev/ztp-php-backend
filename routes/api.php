@@ -2,7 +2,10 @@
 
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminDeviceController;
+use App\Http\Controllers\Admin\AdminReportController;
+use App\Http\Controllers\Admin\AdminRoleController;
 use App\Http\Controllers\Admin\AdminSessionController;
+use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\PolicyController;
 use App\Http\Controllers\Admin\SystemConfigController;
 use App\Http\Controllers\Admin\UserManagementController;
@@ -16,6 +19,7 @@ use App\Http\Controllers\Security\AuditLogController;
 use App\Http\Controllers\Security\CsrfCookieController;
 use App\Http\Controllers\User\AccountController;
 use App\Http\Controllers\User\DeviceController;
+use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\SessionController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +44,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword']);
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
     Route::post('/recover-account', [RecoveryPhraseController::class, 'recoverAccount']);
+    Route::post('/recover-with-phrase', [RecoveryPhraseController::class, 'recoverWithPhrase']);
 });
 
 // Protected Zero-Trust Authenticated Routes
@@ -72,6 +77,7 @@ Route::middleware(['auth:web', 'device.required', 'ztp.verify'])->group(function
     Route::middleware(['user.type:admin,security_analyst'])->group(function () {
         // Network Monitoring
         Route::prefix('analyst/network')->group(function () {
+            Route::get('/overview', [NetworkMonitoringController::class, 'networkMonitoringOverview']);
             Route::get('/events', [NetworkMonitoringController::class, 'events']);
             Route::get('/metrics', [NetworkMonitoringController::class, 'metrics']);
             Route::get('/live', [NetworkMonitoringController::class, 'liveTraffic']);
@@ -79,6 +85,7 @@ Route::middleware(['auth:web', 'device.required', 'ztp.verify'])->group(function
 
         // Threat Investigation & Anomaly Results
         Route::prefix('analyst/threats')->group(function () {
+            Route::get('/overview', [ThreatInvestigationController::class, 'anomalyDetectionOverview']);
             Route::get('/risk-logs', [ThreatInvestigationController::class, 'riskLogs']);
             Route::get('/risk-logs/{riskLog}', [ThreatInvestigationController::class, 'anomalyDetails']);
             Route::post('/risk-logs/{riskLog}/acknowledge', [ThreatInvestigationController::class, 'acknowledgeAlert']);
@@ -118,9 +125,18 @@ Route::middleware(['auth:web', 'device.required', 'ztp.verify'])->group(function
         // Threats and Anomaly Investigations (Admin access)
         Route::get('/threats', [ThreatInvestigationController::class, 'riskLogs']);
         Route::get('/threats/{riskLog}', [ThreatInvestigationController::class, 'anomalyDetails']);
+        Route::patch('/threats/bulk-mitigate', [ThreatInvestigationController::class, 'bulkMitigateThreats']);
+        Route::patch('/threats/{riskLog}', [ThreatInvestigationController::class, 'mitigateThreat']);
+
         Route::get('/alerts', [ThreatInvestigationController::class, 'riskLogs']);
         Route::get('/alerts/{riskLog}', [ThreatInvestigationController::class, 'anomalyDetails']);
+        Route::patch('/alerts/bulk-resolve', [ThreatInvestigationController::class, 'bulkResolveAlerts']);
+        Route::patch('/alerts/{riskLog}', [ThreatInvestigationController::class, 'resolveAlert']);
         Route::post('/alerts/{riskLog}/acknowledge', [ThreatInvestigationController::class, 'acknowledgeAlert']);
+
+        // Network Monitoring & Anomaly Detection Dashboard Views
+        Route::get('/network-monitoring', [NetworkMonitoringController::class, 'networkMonitoringOverview']);
+        Route::get('/anomaly-detection', [ThreatInvestigationController::class, 'anomalyDetectionOverview']);
 
         // Activity Logs (Admin access)
         Route::get('/activity-logs', [AuditLogController::class, 'index']);
@@ -135,15 +151,43 @@ Route::middleware(['auth:web', 'device.required', 'ztp.verify'])->group(function
         Route::apiResource('policies', PolicyController::class);
         Route::post('/policies/{policy}/toggle', [PolicyController::class, 'toggle']);
 
+        // Roles and Permissions
+        Route::get('/roles', [AdminRoleController::class, 'index']);
+        Route::patch('/roles/{id}', [AdminRoleController::class, 'update']);
+
+        // Reports Generation & Download
+        Route::get('/reports', [AdminReportController::class, 'index']);
+        Route::post('/reports', [AdminReportController::class, 'store']);
+        Route::get('/reports/{id}', [AdminReportController::class, 'show']);
+        Route::get('/reports/{id}/download', [AdminReportController::class, 'download']);
+
+        // Platform Settings
+        Route::get('/settings', [AdminSettingsController::class, 'index']);
+        Route::patch('/settings', [AdminSettingsController::class, 'update']);
+
         // System Configuration
         Route::get('/system/config', [SystemConfigController::class, 'index']);
     });
 
     // Account Route Aliases (Frontend compatibility)
     Route::prefix('account')->group(function () {
+        Route::get('/overview', [AccountController::class, 'overview']);
+
         Route::get('/profile', [AccountController::class, 'profile']);
         Route::put('/profile', [AccountController::class, 'updateProfile']);
+        Route::post('/profile/avatar', [AccountController::class, 'uploadAvatar']);
         Route::post('/change-password', [AccountController::class, 'changePassword']);
+
+        Route::get('/security/recovery-phrase/status', [AccountController::class, 'recoveryPhraseStatus']);
+        Route::post('/security/recovery-phrase/generate', [AccountController::class, 'generateRecoveryPhrase']);
+
+        Route::get('/notification-preferences', [AccountController::class, 'notificationPreferences']);
+        Route::patch('/notification-preferences', [AccountController::class, 'updateNotificationPreferences']);
+
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::patch('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
 
         Route::get('/devices', [DeviceController::class, 'index']);
         Route::post('/devices/{device}/trust', [DeviceController::class, 'trustDevice']);

@@ -431,8 +431,9 @@ class AuthService
      */
     public function recoverAccountWithPhrase(string $username, string $phrase, string $newPassword, Request $request): bool
     {
+        $clean = strtolower(trim($username));
         /** @var User|null $user */
-        $user = User::where('username', strtolower(trim($username)))->first();
+        $user = User::where('username', $clean)->orWhere('email', $clean)->first();
 
         if (! $user || ! $user->recovery_phrase_hash) {
             throw ValidationException::withMessages(['recovery' => ['Invalid recovery credentials.']]);

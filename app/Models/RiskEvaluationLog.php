@@ -65,6 +65,70 @@ class RiskEvaluationLog extends Model
         ];
     }
 
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var list<string>
+     */
+    protected $appends = [
+        'title',
+        'description',
+        'severity',
+        'status',
+        'username',
+        'createdAt',
+    ];
+
+    public function getTitleAttribute(): string
+    {
+        $event = str_replace('_', ' ', $this->event_type ?? 'SECURITY_ANOMALY');
+        return ucwords(strtolower($event)) . ($this->risk_score >= 70 ? ' Anomaly Detected' : ' Event');
+    }
+
+    public function getDescriptionAttribute(): string
+    {
+        if (! empty($this->reasons_json) && is_array($this->reasons_json)) {
+            return implode('; ', $this->reasons_json);
+        }
+
+        return "Risk evaluation score {$this->risk_score}/100 recorded from IP {$this->ip_address}.";
+    }
+
+    public function getSeverityAttribute(): string
+    {
+        return match (strtoupper($this->risk_level ?? '')) {
+            'CRITICAL' => 'Critical',
+            'HIGH' => 'High',
+            'MEDIUM' => 'Medium',
+            default => 'Low',
+        };
+    }
+
+    public function getStatusAttribute(): string
+    {
+        if ($this->enforced_action === 'RESOLVED' || $this->enforced_action === 'ACKNOWLEDGED_BY_ANALYST') {
+            return 'Resolved';
+        }
+        if ($this->enforced_action === 'MITIGATED' || $this->enforced_action === 'BLOCK') {
+            return 'Mitigated';
+        }
+        if ($this->risk_score >= 50) {
+            return 'Investigating';
+        }
+
+        return 'Active';
+    }
+
+    public function getUsernameAttribute(): string
+    {
+        return $this->user?->username ?? ($this->user_id ? "User #{$this->user_id}" : 'System');
+    }
+
+    public function getCreatedAtAttribute(): string
+    {
+        return ($this->evaluated_at ?? $this->created_at ?? Carbon::now())->toIso8601String();
+    }
+
     // ==========================================
     // Relationships
     // ==========================================

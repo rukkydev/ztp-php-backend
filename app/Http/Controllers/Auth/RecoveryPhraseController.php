@@ -53,4 +53,35 @@ class RecoveryPhraseController extends Controller
             'message' => 'Account unlocked and password reset successfully. You may now log in.',
         ]);
     }
+
+    /**
+     * Recover account using recovery phrase (Frontend compatible endpoint).
+     */
+    public function recoverWithPhrase(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required_without:username', 'string'],
+            'username' => ['required_without:email', 'string'],
+            'phrase' => ['required_without:recovery_phrase', 'string'],
+            'recovery_phrase' => ['required_without:phrase', 'string'],
+            'newPassword' => ['required_without:password', 'string', 'min:8'],
+            'password' => ['required_without:newPassword', 'string', 'min:8'],
+        ]);
+
+        $identity = $request->input('email') ?? $request->input('username');
+        $phrase = $request->input('phrase') ?? $request->input('recovery_phrase');
+        $newPassword = $request->input('newPassword') ?? $request->input('password');
+
+        $this->authService->recoverAccountWithPhrase(
+            (string) $identity,
+            (string) $phrase,
+            (string) $newPassword,
+            $request
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Account recovered successfully. You may now sign in with your new password.',
+        ]);
+    }
 }
