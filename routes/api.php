@@ -41,6 +41,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/resend-otp', [AuthController::class, 'resendOtp']);
     Route::post('/verify-device/resend', [AuthController::class, 'resendDeviceOtp']);
     Route::post('/2fa/resend', [AuthController::class, 'resend2faOtp']);
+    Route::post('/register', [AuthController::class, 'register']);
     Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword']);
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
     Route::post('/recover-account', [RecoveryPhraseController::class, 'recoverAccount']);
