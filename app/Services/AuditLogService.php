@@ -21,9 +21,13 @@ class AuditLogService
         string $action,
         ?string $description = null,
         ?string $ip = null,
-        array $metadata = []
+        array $metadata = [],
+        ?string $correlationId = null
     ): AuditLog {
+        $corrId = $correlationId ?? $metadata['correlation_id'] ?? null;
+
         return AuditLog::create([
+            'correlation_id' => $corrId,
             'actor_id' => $actorId,
             'actor_username' => $username,
             'actor_type' => $type ?? 'system',
@@ -45,10 +49,12 @@ class AuditLogService
         string $category,
         string $action,
         ?string $description = null,
-        array $metadata = []
+        array $metadata = [],
+        ?string $correlationId = null
     ): AuditLog {
         /** @var User|null $user */
         $user = $request->user();
+        $corrId = $correlationId ?? $metadata['correlation_id'] ?? $request->header('X-Correlation-Id');
 
         return $this->record(
             $user?->id,
@@ -61,7 +67,8 @@ class AuditLogService
             array_merge($metadata, [
                 'user_agent' => $request->userAgent(),
                 'device_id' => $request->header('X-Device-Id'),
-            ])
+            ]),
+            $corrId
         );
     }
 }

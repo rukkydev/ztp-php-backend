@@ -30,6 +30,7 @@ class AuditLog extends Model
      * @var list<string>
      */
     protected $fillable = [
+        'correlation_id',
         'actor_id',
         'actor_username',
         'actor_type',
@@ -38,6 +39,19 @@ class AuditLog extends Model
         'description',
         'ip_address',
         'metadata_json',
+    ];
+
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var list<string>
+     */
+    protected $appends = [
+        'actorUsername',
+        'eventType',
+        'ipAddress',
+        'createdAt',
+        'correlationId',
     ];
 
     /**
@@ -50,6 +64,31 @@ class AuditLog extends Model
         return [
             'metadata_json' => 'array',
         ];
+    }
+
+    public function getActorUsernameAttribute(): string
+    {
+        return $this->actor_username ?? $this->actor?->username ?? 'System';
+    }
+
+    public function getEventTypeAttribute(): string
+    {
+        return $this->action ?? 'SECURITY_EVENT';
+    }
+
+    public function getIpAddressAttribute(): string
+    {
+        return $this->attributes['ip_address'] ?? '127.0.0.1';
+    }
+
+    public function getCreatedAtAttribute(): string
+    {
+        return ($this->attributes['created_at'] ? Carbon::parse($this->attributes['created_at']) : Carbon::now())->toIso8601String();
+    }
+
+    public function getCorrelationIdAttribute(): ?string
+    {
+        return $this->attributes['correlation_id'] ?? null;
     }
 
     // ==========================================

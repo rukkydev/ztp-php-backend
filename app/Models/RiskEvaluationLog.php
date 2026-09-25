@@ -37,6 +37,7 @@ class RiskEvaluationLog extends Model
     protected $fillable = [
         'correlation_id',
         'user_id',
+        'username',
         'device_id',
         'event_type',
         'risk_score',
@@ -47,6 +48,7 @@ class RiskEvaluationLog extends Model
         'engine_version',
         'reasons_json',
         'ip_address',
+        'latency_ms',
         'evaluated_at',
     ];
 
@@ -61,6 +63,7 @@ class RiskEvaluationLog extends Model
             'risk_score' => 'integer',
             'evaluate_reached' => 'boolean',
             'reasons_json' => 'array',
+            'latency_ms' => 'float',
             'evaluated_at' => 'datetime',
         ];
     }
@@ -82,7 +85,8 @@ class RiskEvaluationLog extends Model
     public function getTitleAttribute(): string
     {
         $event = str_replace('_', ' ', $this->event_type ?? 'SECURITY_ANOMALY');
-        return ucwords(strtolower($event)) . ($this->risk_score >= 70 ? ' Anomaly Detected' : ' Event');
+
+        return ucwords(strtolower($event)).($this->risk_score >= 70 ? ' Anomaly Detected' : ' Event');
     }
 
     public function getDescriptionAttribute(): string
@@ -121,12 +125,14 @@ class RiskEvaluationLog extends Model
 
     public function getUsernameAttribute(): string
     {
-        return $this->user?->username ?? ($this->user_id ? "User #{$this->user_id}" : 'System');
+        return $this->attributes['username'] ?? $this->user?->username ?? ($this->user_id ? "User #{$this->user_id}" : 'System');
     }
 
     public function getCreatedAtAttribute(): string
     {
-        return ($this->evaluated_at ?? $this->created_at ?? Carbon::now())->toIso8601String();
+        $raw = $this->attributes['evaluated_at'] ?? $this->attributes['created_at'] ?? null;
+
+        return ($raw ? Carbon::parse($raw) : Carbon::now())->toIso8601String();
     }
 
     // ==========================================

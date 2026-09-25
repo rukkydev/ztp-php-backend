@@ -26,6 +26,7 @@ return [
     'risk_engine' => [
         'base_url' => env('RISK_ENGINE_BASE_URL', 'http://127.0.0.1:8081'),
         'timeout_ms' => (int) env('RISK_ENGINE_TIMEOUT_MS', 400),
+        'enabled' => filter_var(env('RISK_ENGINE_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'ses' => [

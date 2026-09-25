@@ -134,11 +134,42 @@ class AuthService
             'failed_attempts' => $user->failed_login_attempts,
         ]);
 
-        // Check if risk engine recommends blocking
+        // Check if risk engine recommends blocking or restricting
         if ($riskLog->recommended_action === RiskEvaluationLog::ACTION_BLOCK) {
             $this->threatPreventionService->blockDeviceMitigation($device, $riskLog);
+            $this->auditLogService->record(
+                $user->id,
+                $user->username,
+                $user->type,
+                'AUTHENTICATION',
+                'LOGIN_BLOCKED_BY_RISK_ENGINE',
+                "Login blocked by Zero-Trust anomaly engine (Score: {$riskLog->risk_score}, Action: BLOCK)",
+                $request->ip(),
+                ['risk_score' => $riskLog->risk_score, 'device_id' => $device->id, 'correlation_id' => $riskLog->correlation_id],
+                $riskLog->correlation_id
+            );
+
             throw ValidationException::withMessages([
-                'device' => ['Device isolated and blocked by Zero-Trust anomaly detection.'],
+                'device' => ['Device access blocked by Zero-Trust anomaly detection.'],
+            ]);
+        }
+
+        if ($riskLog->recommended_action === RiskEvaluationLog::ACTION_RESTRICT) {
+            $this->threatPreventionService->lockAccountMitigation($user, $riskLog);
+            $this->auditLogService->record(
+                $user->id,
+                $user->username,
+                $user->type,
+                'AUTHENTICATION',
+                'LOGIN_RESTRICTED_BY_RISK_ENGINE',
+                "Login restricted by Zero-Trust anomaly engine (Score: {$riskLog->risk_score}, Action: RESTRICT)",
+                $request->ip(),
+                ['risk_score' => $riskLog->risk_score, 'user_id' => $user->id, 'correlation_id' => $riskLog->correlation_id],
+                $riskLog->correlation_id
+            );
+
+            throw ValidationException::withMessages([
+                'account' => ['Account access restricted and locked due to suspicious activity.'],
             ]);
         }
 
@@ -159,10 +190,11 @@ class AuthService
                 '2FA_CHALLENGE_DISPATCHED',
                 "Dispatched 6-digit OTP verification code to {$user->email}",
                 $request->ip(),
-                ['risk_score' => $riskLog->risk_score, 'device_id' => $device->id]
+                ['risk_score' => $riskLog->risk_score, 'device_id' => $device->id, 'correlation_id' => $riskLog->correlation_id],
+                $riskLog->correlation_id
             );
 
-            $isDeviceUntrustedOnly = ! $user->two_factor_enabled && ! $device->is_trusted && $riskLog->recommended_action !== RiskEvaluationLog::ACTION_MFA_CHALLENGE;
+            $isDeviceUntrustedOnly = ! $user->two_factor_enabled && ! $device->is_trusted;
 
             return [
                 'requires_2fa' => ! $isDeviceUntrustedOnly,
@@ -171,6 +203,7 @@ class AuthService
                 'user_id' => $user->id,
                 'email' => $this->maskEmail($user->email),
                 'risk_score' => $riskLog->risk_score,
+                'correlation_id' => $riskLog->correlation_id,
                 'message' => $isDeviceUntrustedOnly
                     ? 'Unrecognized device detected. Enter the 6-digit verification code sent to your email.'
                     : 'Security verification required. Enter the 6-digit code sent to your email.',
@@ -178,7 +211,7 @@ class AuthService
         }
 
         // Successful direct login
-        return $this->completeLogin($user, $device, $request, 'PASSWORD_DIRECT');
+        return $this->completeLogin($user, $device, $request, 'PASSWORD_DIRECT', $riskLog->correlation_id);
     }
 
     /**
@@ -237,7 +270,7 @@ class AuthService
      *
      * @return array<string, mixed>
      */
-    protected function completeLogin(User $user, Device $device, Request $request, string $authMethod): array
+    protected function completeLogin(User $user, Device $device, Request $request, string $authMethod, ?string $correlationId = null): array
     {
         $user->update([
             'failed_login_attempts' => 0,
@@ -255,7 +288,8 @@ class AuthService
             'LOGIN_SUCCESS',
             "User {$user->username} authenticated via {$authMethod}",
             $request->ip(),
-            ['device_id' => $device->id, 'auth_method' => $authMethod]
+            ['device_id' => $device->id, 'auth_method' => $authMethod, 'correlation_id' => $correlationId],
+            $correlationId
         );
 
         return [

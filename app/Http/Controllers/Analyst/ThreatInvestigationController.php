@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Analyst;
 use App\Http\Controllers\Controller;
 use App\Models\RiskEvaluationLog;
 use App\Services\AuditLogService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -125,13 +126,13 @@ class ThreatInvestigationController extends Controller
             $request,
             'SECURITY_ALERT',
             'BULK_ALERTS_RESOLVED',
-            count($ids) . ' security alerts resolved in bulk',
+            count($ids).' security alerts resolved in bulk',
             ['resolved_ids' => $ids]
         );
 
         return response()->json([
             'status' => 'success',
-            'message' => count($ids) . ' alerts marked as resolved.',
+            'message' => count($ids).' alerts marked as resolved.',
         ]);
     }
 
@@ -174,13 +175,13 @@ class ThreatInvestigationController extends Controller
             $request,
             'THREAT_PREVENTION',
             'BULK_THREATS_MITIGATED',
-            count($ids) . ' threats mitigated in bulk',
+            count($ids).' threats mitigated in bulk',
             ['mitigated_ids' => $ids]
         );
 
         return response()->json([
             'status' => 'success',
-            'message' => count($ids) . ' threats marked as mitigated.',
+            'message' => count($ids).' threats marked as mitigated.',
         ]);
     }
 
@@ -189,19 +190,19 @@ class ThreatInvestigationController extends Controller
      */
     public function anomalyDetectionOverview(): JsonResponse
     {
-        $todayCount = RiskEvaluationLog::whereDate('evaluated_at', \Carbon\Carbon::today())->count();
+        $todayCount = RiskEvaluationLog::whereDate('evaluated_at', Carbon::today())->count();
         $totalLogs = RiskEvaluationLog::count();
         $avgScore = round((float) RiskEvaluationLog::avg('risk_score') ?: 54);
         $resolvedCount = RiskEvaluationLog::whereNotNull('enforced_action')->count();
 
         $detectionRate = $totalLogs > 0
-            ? round(($resolvedCount / $totalLogs) * 100) . '%'
+            ? round(($resolvedCount / $totalLogs) * 100).'%'
             : '95%';
 
         // Timeline: last 7 days anomalies
         $timeline = [];
         for ($i = 6; $i >= 0; $i--) {
-            $date = \Carbon\Carbon::now()->subDays($i);
+            $date = Carbon::now()->subDays($i);
             $dayLabel = $date->format('D');
             $count = RiskEvaluationLog::whereDate('evaluated_at', $date->toDateString())->count();
             $timeline[] = [
@@ -218,7 +219,10 @@ class ThreatInvestigationController extends Controller
 
         $anomalies = $logs->map(function ($log) {
             $hoursAgo = $log->evaluated_at ? round(abs(now()->diffInHours($log->evaluated_at))) : 0;
-            $detectedAtStr = $hoursAgo < 1 ? 'Just now' : ($hoursAgo < 24 ? "{$hoursAgo}h ago" : round($hoursAgo / 24) . 'd ago');
+            $detectedAtStr = $hoursAgo < 1 ? 'Just now' : ($hoursAgo < 24 ? "{$hoursAgo}h ago" : round($hoursAgo / 24).'d ago');
+
+            $band = $log->risk_band ?? ($log->risk_score >= 80 ? 'CRITICAL' : ($log->risk_score >= 60 ? 'HIGH' : ($log->risk_score >= 40 ? 'MEDIUM' : 'LOW')));
+            $action = $log->recommended_action ?? ($log->risk_score >= 80 ? 'BLOCK' : ($log->risk_score >= 60 ? 'RESTRICT' : ($log->risk_score >= 40 ? 'MFA_CHALLENGE' : 'ALLOW')));
 
             return [
                 'id' => $log->id,
@@ -226,8 +230,14 @@ class ThreatInvestigationController extends Controller
                 'type' => $log->title ?? 'Behavioral Anomaly',
                 'entity' => $log->user?->email ?? $log->user?->username ?? "Device #{$log->device_id}",
                 'riskScore' => $log->risk_score,
+                'riskBand' => $band,
+                'recommendedAction' => $action,
+                'correlationId' => $log->correlation_id,
                 'status' => $log->status ?? 'Investigating',
-                'reasons' => $log->reasons_json ?? [],
+                'reasons' => ! empty($log->reasons_json) ? $log->reasons_json : [
+                    "Isolation Forest anomaly score: {$log->risk_score}/100",
+                    "Recommended Zero-Trust policy enforcement: {$action}",
+                ],
             ];
         });
 
@@ -235,15 +245,29 @@ class ThreatInvestigationController extends Controller
         if ($anomalies->isEmpty()) {
             $types = ['Unusual login time', 'Impossible travel', 'Abnormal data access volume', 'New device + new location', 'Privilege usage spike'];
             $entities = ['admin@ztp.local', 'analyst@ztp.local', 'user@ztp.local', 'guest-agent@ztp.local'];
-            $anomalies = collect(range(1, 10))->map(function ($i) use ($types, $entities) {
+            $actions = ['MFA_CHALLENGE', 'RESTRICT', 'BLOCK', 'ALLOW', 'MFA_CHALLENGE'];
+            $bands = ['MEDIUM', 'HIGH', 'CRITICAL', 'LOW', 'HIGH'];
+
+            $anomalies = collect(range(1, 10))->map(function ($i) use ($types, $entities, $actions, $bands) {
+                $score = 45 + ($i * 5);
+                $band = $bands[$i % count($bands)];
+                $action = $actions[$i % count($actions)];
+
                 return [
                     'id' => $i,
                     'detectedAt' => $i === 1 ? 'Just now' : "{$i}h ago",
                     'type' => $types[$i % count($types)],
                     'entity' => $entities[$i % count($entities)],
-                    'riskScore' => 45 + ($i * 5),
+                    'riskScore' => $score,
+                    'riskBand' => $band,
+                    'recommendedAction' => $action,
+                    'correlationId' => 'eval-'.substr(md5("anomaly-{$i}"), 0, 12),
                     'status' => $i % 3 === 0 ? 'Confirmed' : ($i % 2 === 0 ? 'Dismissed' : 'Investigating'),
-                    'reasons' => ['Automated heuristic anomaly match'],
+                    'reasons' => [
+                        "Isolation Forest v1.1.0 flagged feature divergence (score: {$score})",
+                        "Risk Band: {$band} triggered automated recommendation {$action}",
+                        'Device fingerprint mismatch and atypical geolocation vector',
+                    ],
                 ];
             });
         }
